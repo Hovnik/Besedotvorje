@@ -4,13 +4,18 @@ const mongoose = require("mongoose");
 const helmet = require("helmet");
 const rateLimit = require("express-rate-limit");
 const mongoSanitize = require("express-mongo-sanitize");
+const path = require("path");
 require("dotenv").config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Security: Set security headers
-app.use(helmet());
+app.use(
+  helmet({
+    contentSecurityPolicy: false, // Disable CSP for now to allow inline scripts
+  }),
+);
 
 // Security: Rate limiting
 const limiter = rateLimit({
@@ -25,10 +30,24 @@ const limiter = rateLimit({
 app.use("/api/", limiter);
 
 // Middleware - CORS configuration
+const allowedOrigins = [
+  process.env.FRONTEND_URL,
+  "http://localhost:3000",
+  "http://localhost:5173",
+].filter(Boolean);
+
 const corsOptions = {
-  origin: process.env.FRONTEND_URL || "http://localhost:5173",
-  methods: ["GET", "POST"],
-  allowedHeaders: ["Content-Type"],
+  origin: (origin, callback) => {
+    // Allow requests with no origin (like mobile apps or curl)
+    if (!origin || allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      callback(new Error("Not allowed by CORS"));
+    }
+  },
+  methods: ["GET", "POST", "PUT", "DELETE"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+  credentials: true,
   maxAge: 86400, // 24 hours
 };
 app.use(cors(corsOptions));
@@ -62,27 +81,59 @@ mongoose
 
 // Routes
 const wordRoutes = require("./routes/wordRoutes");
+const userRoutes = require("./routes/userRoutes");
 
 // Pass rate limiters to routes
 app.use("/api/words", wordRoutes);
+app.use("/api/users", userRoutes);
 
 // Health check
 app.get("/api/health", (req, res) => {
-  res.json({
+  const healthCheck = {
     status: "OK",
-    message: "Server is running",
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+    environment: process.env.NODE_ENV || "development",
+    mongodb:
+      mongoose.connection.readyState === 1 ? "connected" : "disconnected",
     openai: process.env.OPENAI_API_KEY ? "configured" : "missing",
-  });
+  };
+
+  const httpStatus = healthCheck.mongodb === "connected" ? 200 : 503;
+  res.status(httpStatus).json(healthCheck);
 });
 
-// 404 handler
-app.use((req, res) => {
-  res.status(404).json({ error: "Route not found" });
-});
+// Serve static files in production
+if (process.env.NODE_ENV === "production") {
+  // Serve static files from the frontend build
+  app.use(express.static(path.join(__dirname, "../frontend/dist")));
+
+  // Handle React routing - serve index.html for all routes
+  app.get("*", (req, res) => {
+    res.sendFile(path.join(__dirname, "../frontend/dist/index.html"));
+  });
+} else {
+  // 404 handler for development
+  app.use((req, res) => {
+    res.status(404).json({ error: "Route not found" });
+  });
+}
 
 // Global error handler
 app.use((err, req, res, next) => {
-  console.error("Error:", err);
+  // Log error details
+  console.error("Error:", err.message);
+  if (process.env.NODE_ENV !== "production") {
+    console.error("Stack:", err.stack);
+  }
+
+  // Handle specific error types
+  if (err.message === "Not allowed by CORS") {
+    return res.status(403).json({
+      error: "CORS policy: Origin not allowed",
+      origin: req.headers.origin,
+    });
+  }
 
   // Don't leak error details in production
   const errorMessage =

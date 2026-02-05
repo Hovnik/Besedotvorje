@@ -1,0 +1,32 @@
+{
+  "name": "besedotvorje",
+  "version": "1.0.0",
+  "description": "Slovenian word formation analyzer with ChatGPT",
+  "private": true,
+  "scripts": {
+    "install:all": "npm install --prefix backend && npm install --prefix frontend",
+    "dev:backend": "npm run dev --prefix backend",
+    "dev:frontend": "npm run dev --prefix frontend",
+    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "build": "npm run build --prefix frontend",
+    "start": "NODE_ENV=production npm start --prefix backend",
+    "deploy": "npm run build && npm start",
+    "heroku-postbuild": "npm run build"
+  },
+  "keywords": [
+    "slovenian",
+    "word-formation",
+    "chatgpt",
+    "openai",
+    "mern"
+  ],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  },
+  "engines": {
+    "node": ">=16.0.0",
+    "npm": ">=8.0.0"
+  }
+}

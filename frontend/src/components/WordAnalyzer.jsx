@@ -1,13 +1,36 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import axios from "axios";
 import { Search } from "lucide-react";
 import VoteButtons from "./VoteButtons";
+import EditResultModal from "../modals/EditResultModal";
 
-function WordAnalyzer() {
+function WordAnalyzer({ onResultChange }) {
   const [word, setWord] = useState("");
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
+  const [isEditOpen, setIsEditOpen] = useState(false);
+
+  useEffect(() => {
+    onResultChange(!!result);
+  }, [result, onResultChange]);
+
+  // Listen for global clearResults event (fired by Header click)
+  useEffect(() => {
+    const handler = () => {
+      setResult(null);
+    };
+
+    if (typeof window !== "undefined") {
+      window.addEventListener("clearResults", handler);
+    }
+
+    return () => {
+      if (typeof window !== "undefined") {
+        window.removeEventListener("clearResults", handler);
+      }
+    };
+  }, []);
 
   const analyzeWord = async (e) => {
     e.preventDefault();
@@ -40,15 +63,26 @@ function WordAnalyzer() {
   return (
     <div className="space-y-8">
       {/* Input Card */}
-      <div className="bg-gradient-to-br from-white to-amber-50/30 backdrop-blur-sm rounded-3xl shadow-2xl p-6 sm:p-8 md:p-10 border border-rose-100/50">
-        <form onSubmit={analyzeWord} className="space-y-6">
+      <div
+        className={`bg-gradient-to-br from-white to-amber-50 rounded-3xl shadow-2xl border border-rose-100/50 transition-all duration-700 ${
+          result ? "p-4 sm:p-6" : "p-6 sm:p-8 md:p-10"
+        }`}
+      >
+        <form
+          onSubmit={analyzeWord}
+          className={`transition-all duration-700 ${
+            result ? "space-y-3" : "space-y-6"
+          }`}
+        >
           <div>
-            <label
-              htmlFor="wordInput"
-              className="block text-sm font-semibold text-rose-900 mb-3 uppercase tracking-wide"
-            >
-              Vnesite besedo
-            </label>
+            {!result && (
+              <label
+                htmlFor="wordInput"
+                className="block text-sm font-semibold text-rose-900 mb-3 uppercase tracking-wide transition-all duration-500"
+              >
+                Vnesite besedo
+              </label>
+            )}
             <div className="flex gap-2 sm:gap-3">
               <input
                 id="wordInput"
@@ -56,7 +90,7 @@ function WordAnalyzer() {
                 value={word}
                 onChange={(e) => setWord(e.target.value)}
                 placeholder="na primer: gasilec"
-                className="flex-1 px-4 sm:px-6 py-3 sm:py-4 text-base sm:text-lg border-2 border-rose-200 rounded-2xl focus:ring-4 focus:ring-rose-900/20 focus:border-rose-900 outline-none transition bg-white/80 placeholder:text-neutral-400"
+                className="flex-1 px-4 sm:px-6 py-3 sm:py-4 text-base sm:text-lg border-2 border-rose-200 rounded-2xl focus:ring-4 focus:ring-rose-900/20 focus:border-rose-900 outline-none transition bg-white placeholder:text-neutral-400"
                 disabled={loading}
               />
               <button
@@ -95,21 +129,23 @@ function WordAnalyzer() {
           </div>
 
           {/* Examples */}
-          <div className="flex flex-wrap gap-3 items-center pt-2">
-            <span className="text-sm font-medium text-neutral-600">
-              Primeri:
-            </span>
-            {exampleWords.map((example) => (
-              <button
-                key={example}
-                type="button"
-                onClick={() => setWord(example)}
-                className="px-4 py-2 text-sm font-medium bg-amber-100/60 hover:bg-rose-100 text-rose-900 rounded-xl transition-all hover:shadow-md"
-              >
-                {example}
-              </button>
-            ))}
-          </div>
+          {!result && (
+            <div className="flex flex-wrap gap-3 items-center pt-2">
+              <span className="text-sm font-medium text-neutral-600">
+                Primeri:
+              </span>
+              {exampleWords.map((example) => (
+                <button
+                  key={example}
+                  type="button"
+                  onClick={() => setWord(example)}
+                  className="px-4 py-2 text-sm font-medium bg-amber-100/60 hover:bg-rose-100 text-rose-900 rounded-xl transition-all hover:shadow-md"
+                >
+                  {example}
+                </button>
+              ))}
+            </div>
+          )}
         </form>
       </div>
 
@@ -123,7 +159,18 @@ function WordAnalyzer() {
 
       {/* Results Card */}
       {result && (
-        <div className="bg-gradient-to-br from-white via-amber-50/20 to-rose-50/30 rounded-3xl shadow-2xl p-6 sm:p-8 md:p-10 border border-rose-100/50 animate-fadeIn">
+        <div className="bg-gradient-to-br from-white via-amber-50 to-rose-50 rounded-3xl shadow-2xl p-6 sm:p-8 md:p-10 border border-rose-100/50 animate-slideUp relative">
+          {/* Edit button (visible only if user is logged in) */}
+          {typeof window !== "undefined" && localStorage.getItem("user") && (
+            <div className="absolute top-4 right-4">
+              <button
+                onClick={() => setIsEditOpen(true)}
+                className="px-3 py-1 bg-rose-50 border-2 border-rose-100 text-rose-900 text-sm font-semibold rounded-xl hover:bg-rose-100 transition"
+              >
+                Uredi
+              </button>
+            </div>
+          )}
           {/* Check if it's not a derivative word */}
           {result.analysis.toLowerCase().includes("ni tvorjenka") ? (
             <div className="space-y-6">
@@ -152,7 +199,7 @@ function WordAnalyzer() {
                     {result.word}
                   </p>
                   {result.type && (
-                    <span className="px-3 py-1 bg-gradient-to-r from-amber-200 to-orange-200 text-rose-900 text-xs sm:text-sm font-semibold rounded-lg relative -top-1">
+                    <span className="px-3 py-1 bg-gradient-to-r from-amber-200 to-orange-200 text-rose-900 text-xs sm:text-sm font-semibold rounded-lg relative -top-2">
                       {result.type}
                     </span>
                   )}
@@ -163,7 +210,7 @@ function WordAnalyzer() {
                 <p className="text-sm font-bold text-rose-900 mb-3 uppercase tracking-wide">
                   Besedotvorna podstava
                 </p>
-                <div className="bg-gradient-to-br from-amber-50 to-orange-50/50 rounded-2xl p-4 sm:p-6 border border-rose-200/30 shadow-inner">
+                <div className="bg-gradient-to-br from-amber-50 to-orange-50 rounded-2xl p-4 sm:p-6 border border-rose-200/30">
                   <p className="text-base sm:text-lg md:text-xl text-neutral-800 whitespace-pre-wrap leading-relaxed font-medium">
                     {result.analysis}
                   </p>
@@ -183,6 +230,12 @@ function WordAnalyzer() {
           )}
         </div>
       )}
+      <EditResultModal
+        isOpen={isEditOpen}
+        onClose={() => setIsEditOpen(false)}
+        result={result}
+        onSave={(updated) => setResult(updated)}
+      />
     </div>
   );
 }

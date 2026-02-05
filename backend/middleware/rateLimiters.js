@@ -18,7 +18,18 @@ const voteRateLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+// Rate limiting for login to prevent brute force attacks
+const loginRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 5, // Limit each IP to 5 login attempts per 15 minutes
+  message: "Preveč poskusov prijave. Prosimo poskusite znova čez 15 minut.",
+  standardHeaders: true,
+  legacyHeaders: false,
+  skipSuccessfulRequests: true, // Don't count successful logins
+});
+
 module.exports = {
   analyzeRateLimiter,
   voteRateLimiter,
+  loginRateLimiter,
 };

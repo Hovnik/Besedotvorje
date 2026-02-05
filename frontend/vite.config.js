@@ -12,4 +12,10 @@ export default defineConfig({
       },
     },
   },
+  build: {
+    outDir: "dist",
+    sourcemap: false,
+    minify: "esbuild",
+    chunkSizeWarningLimit: 1000,
+  },
 });

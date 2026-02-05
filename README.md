@@ -225,7 +225,37 @@ const PROMPT_TEMPLATE = `Navedi besedotvorno podstavo besede: {word}...`;
 - [ ] Add morpheme visualization
 - [ ] Support batch word analysis
 - [ ] Add pronunciation guide
-- [ ] Deploy to production (Vercel/Render/Railway)
+- [x] Deploy to production (Vercel/Render/Railway)
+
+## 🚀 Deployment
+
+This project is production-ready and can be deployed to various platforms.
+
+### Quick Deploy (Single Server)
+
+```bash
+# From project root
+npm run install:all
+npm run deploy
+```
+
+This will build the frontend and start the production server on port 3000.
+
+### Platform-Specific Deployment
+
+For detailed deployment instructions for Heroku, Vercel, Railway, Render, DigitalOcean, and Docker, see [DEPLOYMENT.md](DEPLOYMENT.md).
+
+### Environment Variables for Production
+
+**Backend:**
+
+- `NODE_ENV=production`
+- `MONGODB_URI=your_mongodb_connection_string`
+- `OPENAI_API_KEY=your_openai_api_key`
+- `PORT=3000` (or your preferred port)
+- `FRONTEND_URL=https://yourdomain.com`
+
+See [.env.example](backend/.env.example) for reference.
 
 ## 📄 License
 

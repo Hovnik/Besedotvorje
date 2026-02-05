@@ -189,19 +189,50 @@ exports.analyzeWord = async (req, res) => {
   }
 };
 
-exports.getHistory = async (req, res) => {
+// Update an existing word's analysis and type
+exports.updateWord = async (req, res) => {
   try {
-    const history = await Word.find()
-      .sort({ lastAccessed: -1 })
-      .limit(50)
-      .select(
-        "word analysis type accessCount createdAt lastAccessed likes dislikes",
-      );
+    const { id } = req.params;
+    const { type, analysis } = req.body;
 
-    res.json(history);
+    // Validate id
+    if (!id || !id.match(/^[0-9a-fA-F]{24}$/)) {
+      return res.status(400).json({ error: "Invalid word ID" });
+    }
+
+    if (!analysis || typeof analysis !== "string" || !analysis.trim()) {
+      return res.status(400).json({ error: "Analysis text is required" });
+    }
+
+    // Limit size to avoid abuse
+    const cleanAnalysis = analysis.trim().slice(0, 10000);
+    const cleanType = type ? String(type).trim().slice(0, 200) : "";
+
+    const wordDoc = await Word.findById(id);
+    if (!wordDoc) {
+      return res.status(404).json({ error: "Word not found" });
+    }
+
+    wordDoc.analysis = cleanAnalysis;
+    wordDoc.type = cleanType;
+    await wordDoc.save();
+
+    // Reset likes/dislikes on manual edit
+    wordDoc.likes = 0;
+    wordDoc.dislikes = 0;
+    wordDoc.votes = [];
+    await wordDoc.save();
+
+    res.json({
+      success: true,
+      _id: wordDoc._id,
+      word: wordDoc.word,
+      analysis: wordDoc.analysis,
+      type: wordDoc.type,
+    });
   } catch (error) {
-    console.error("Error fetching history:", error);
-    res.status(500).json({ error: "Error fetching history" });
+    console.error("Error updating word:", error);
+    res.status(500).json({ error: "Error updating word" });
   }
 };
 
@@ -218,11 +249,9 @@ exports.voteOnWord = async (req, res) => {
 
     // Validate voteType
     if (voteType !== null && voteType !== "like" && voteType !== "dislike") {
-      return res
-        .status(400)
-        .json({
-          error: "Invalid vote type. Must be 'like', 'dislike', or null",
-        });
+      return res.status(400).json({
+        error: "Invalid vote type. Must be 'like', 'dislike', or null",
+      });
     }
 
     const word = await Word.findById(wordId);
@@ -276,5 +305,40 @@ exports.voteOnWord = async (req, res) => {
   } catch (error) {
     console.error("Error voting on word:", error);
     res.status(500).json({ error: "Error voting on word" });
+  }
+};
+
+// Get most disliked words sorted by dislike percentage
+exports.getMostDisliked = async (req, res) => {
+  try {
+    // Fetch all words with at least one vote
+    const words = await Word.find({
+      $expr: { $gt: [{ $add: ["$likes", "$dislikes"] }, 0] },
+    }).select("word analysis type likes dislikes");
+
+    // Calculate dislike percentage and sort
+    const wordsWithPercentage = words.map((word) => {
+      const total = word.likes + word.dislikes;
+      const dislikePercentage = total > 0 ? (word.dislikes / total) * 100 : 0;
+      return {
+        _id: word._id,
+        word: word.word,
+        analysis: word.analysis,
+        type: word.type,
+        likes: word.likes,
+        dislikes: word.dislikes,
+        dislikePercentage: Math.round(dislikePercentage * 10) / 10, // Round to 1 decimal
+      };
+    });
+
+    // Sort by dislike percentage (descending)
+    wordsWithPercentage.sort(
+      (a, b) => b.dislikePercentage - a.dislikePercentage,
+    );
+
+    res.json(wordsWithPercentage);
+  } catch (error) {
+    console.error("Error fetching most disliked:", error);
+    res.status(500).json({ error: "Error fetching statistics" });
   }
 };
