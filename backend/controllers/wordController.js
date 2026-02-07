@@ -32,6 +32,18 @@ Srednjeveški -> srednj-e-veški
 
 Vrni le kar je na desni strani puščice ->.
 Če beseda je tvorjenka, navedi tip tvorjenke (npr. "izpeljanka", "zloženka", "sestavljenka", "krn", "mešana tvorba", "sklop") na koncu odgovora.
+Če beseda vsebuje končnico, jo napiši z velikimi črkami, na primer:
+Križišče -> križ+iščE
+Gnojilo -> gnoj-ilO
+Stojišče -> stoj-iščE
+Barvilo -> barv-ilO
+Čistilo -> čist-ilO
+Gradivo -> grad-ivO
+Če beseda ne vsebuje končnice, napiši celotno tvorjenko z malimi črkami, in na koncu dodaj simbola '-∅', na primer:
+Mizar -> miz-ar-∅
+Zemljevid -> zemlj-e-vid-∅
+Kamnolom -> kamn-olom-∅
+Besedotvorno podstavo in tip tvorjenke loči z vejico, na primer: Križišče -> križ-iščE, zloženka.
 `;
 
 // Extract word type from analysis (e.g., "izpeljanka", "zloženka")

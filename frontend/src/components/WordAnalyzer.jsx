@@ -60,6 +60,71 @@ function WordAnalyzer({ onResultChange }) {
 
   const exampleWords = ["voznik", "srečelov", "predpostavka", "učiteljica"];
 
+  const renderColoredAnalysis = (text) => {
+    if (!text) return text;
+
+    const result = [];
+    let currentIndex = 0;
+
+    for (let i = 0; i < text.length; i++) {
+      const char = text[i];
+
+      // Check if character is '∅'
+      if (char === "∅") {
+        // Add any accumulated normal text before this character
+        if (i > currentIndex) {
+          result.push(
+            <span key={`normal-${currentIndex}`}>
+              {text.substring(currentIndex, i)}
+            </span>,
+          );
+        }
+
+        // Add the '∅' character with color
+        result.push(
+          <span key={`empty-${i}`} className="text-rose-500 font-bold">
+            ∅
+          </span>,
+        );
+
+        currentIndex = i + 1;
+        continue; // Skip further checks for this character
+      }
+
+      // Check if character is uppercase (and is a letter)
+      if (char !== char.toLowerCase() && char.match(/[A-ZČĆŽŠĐ]/)) {
+        // Add any accumulated normal text before this uppercase char
+        if (i > currentIndex) {
+          result.push(
+            <span key={`normal-${currentIndex}`}>
+              {text.substring(currentIndex, i)}
+            </span>,
+          );
+        }
+
+        // Add the lowercase version of the uppercase char with color
+        result.push(
+          <span key={`colored-${i}`} className="text-rose-500 font-bold">
+            {char.toLowerCase()}
+          </span>,
+        );
+
+        currentIndex = i + 1;
+      }
+    }
+
+    // Add any remaining text
+    if (currentIndex < text.length) {
+      result.push(
+        <span key={`normal-${currentIndex}`}>
+          {text.substring(currentIndex)}
+        </span>,
+      );
+    }
+
+    return result.length > 0 ? result : text;
+  };
+
   return (
     <div className="space-y-8">
       {/* Input Card */}
@@ -210,9 +275,12 @@ function WordAnalyzer({ onResultChange }) {
                 <p className="text-sm font-bold text-rose-900 mb-3 uppercase tracking-wide">
                   Besedotvorna podstava
                 </p>
+                <p className="text-sm text-neutral-500 mb-3">
+                  *Obarvane črke označujejo končnico.
+                </p>
                 <div className="bg-gradient-to-br from-amber-50 to-orange-50 rounded-2xl p-4 sm:p-6 border border-rose-200/30">
                   <p className="text-base sm:text-lg md:text-xl text-neutral-800 whitespace-pre-wrap leading-relaxed font-medium">
-                    {result.analysis}
+                    {renderColoredAnalysis(result.analysis)}
                   </p>
                 </div>
               </div>

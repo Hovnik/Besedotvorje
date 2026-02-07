@@ -115,6 +115,7 @@ function EditResultModal({ isOpen, onClose, result, onSave, onRefreshStats }) {
               <option value="sklop">sklop</option>
               <option value="krn">krn</option>
               <option value="zloženka">zloženka</option>
+              <option value="mešana tvorba">mešana tvorba</option>
               <option value="tvorjenka iz predložne zveze">
                 tvorjenka iz predložne zveze
               </option>
@@ -125,6 +126,10 @@ function EditResultModal({ isOpen, onClose, result, onSave, onRefreshStats }) {
             <label className="block text-sm font-semibold text-rose-900 mb-2 uppercase tracking-wide">
               Analiza
             </label>
+            <p className="text-xs text-neutral-500 mb-2">
+              *Velike črke označujejo končnico, npr. križ+iščE. Za spreminjanje
+              končnice, zapišite del z velikimi črkami.
+            </p>
             <textarea
               rows={1}
               value={analysis}
