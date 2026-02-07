@@ -42,6 +42,18 @@ function EditResultModal({ isOpen, onClose, result, onSave, onRefreshStats }) {
     setAnalysis("Ni tvorjenka");
   };
 
+  const handleAddEmptySuffix = () => {
+    // Append -∅ to the analysis text, avoid duplicates
+    if (!analysis) {
+      setAnalysis("-∅");
+      return;
+    }
+
+    if (!analysis.endsWith("-∅")) {
+      setAnalysis((prev) => prev + "-∅");
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
@@ -126,10 +138,19 @@ function EditResultModal({ isOpen, onClose, result, onSave, onRefreshStats }) {
             <label className="block text-sm font-semibold text-rose-900 mb-2 uppercase tracking-wide">
               Analiza
             </label>
-            <p className="text-xs text-neutral-500 mb-2">
-              *Velike črke označujejo končnico, npr. križ+iščE. Za spreminjanje
-              končnice, zapišite del z velikimi črkami.
-            </p>
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-xs text-neutral-500">
+                *Velike črke označujejo končnico, npr. križ+iščE. Za
+                spreminjanje končnice, zapišite del z velikimi črkami.
+              </p>
+              <button
+                type="button"
+                onClick={handleAddEmptySuffix}
+                className="text-xs px-3 py-1 bg-rose-50 border-2 border-rose-100 text-rose-900 rounded-lg hover:bg-rose-100 transition whitespace-nowrap"
+              >
+                Dodaj -∅
+              </button>
+            </div>
             <textarea
               rows={1}
               value={analysis}
