@@ -5,6 +5,7 @@ const crypto = require("crypto");
 const {
   fetchWordsWithMetadata,
   filterUnverifiedWords,
+  filterVerifiedWords,
   getWordsWithDislikes,
   countVerifiedWords,
 } = require("../utils/wordHelpers");
@@ -466,6 +467,43 @@ exports.getUnverifiedWords = async (req, res) => {
     console.error("Error in getUnverifiedWords:", error);
     return res.status(500).json({
       error: "Failed to fetch unverified words",
+      details: error.message,
+    });
+  }
+};
+
+/**
+ * Get verified words (paginated)
+ * Paginated by 20 per page
+ */
+exports.getVerifiedWords = async (req, res) => {
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = 20;
+    const skip = (page - 1) * limit;
+
+    const { words, metadataMap } = await fetchWordsWithMetadata();
+    const verifiedWords = filterVerifiedWords(words, metadataMap);
+
+    // Sort by confidence (lowest first, like unverified)
+    verifiedWords.sort((a, b) => (a.confidence || 0) - (b.confidence || 0));
+
+    const paginatedWords = verifiedWords.slice(skip, skip + limit);
+    const totalPages = Math.ceil(verifiedWords.length / limit);
+
+    return res.json({
+      words: paginatedWords,
+      pagination: {
+        currentPage: page,
+        totalPages,
+        totalWords: verifiedWords.length,
+        wordsPerPage: limit,
+      },
+    });
+  } catch (error) {
+    console.error("Error in getVerifiedWords:", error);
+    return res.status(500).json({
+      error: "Failed to fetch verified words",
       details: error.message,
     });
   }

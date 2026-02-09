@@ -13,7 +13,7 @@ function StatsModal({ isOpen, onClose }) {
   const [error, setError] = useState("");
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [selectedWord, setSelectedWord] = useState(null);
-  const [activeTab, setActiveTab] = useState("unverified"); // "unverified" or "unliked"
+  const [activeTab, setActiveTab] = useState("unverified"); // "unverified", "unliked", or "verified"
   const [verifiedCount, setVerifiedCount] = useState(0);
 
   useScrollLock(isOpen);
@@ -53,10 +53,14 @@ function StatsModal({ isOpen, onClose }) {
     setError("");
 
     try {
-      const endpoint =
-        activeTab === "unverified"
-          ? `/api/words/unverified?page=${page}`
-          : `/api/words/most-unliked?page=${page}`;
+      let endpoint;
+      if (activeTab === "unverified") {
+        endpoint = `/api/words/unverified?page=${page}`;
+      } else if (activeTab === "unliked") {
+        endpoint = `/api/words/most-unliked?page=${page}`;
+      } else {
+        endpoint = `/api/words/verified?page=${page}`;
+      }
 
       const response = await axios.get(endpoint);
       setWords(response.data.words);
@@ -126,6 +130,16 @@ function StatsModal({ isOpen, onClose }) {
                 Nepotrjene
               </button>
               <button
+                onClick={() => setActiveTab("verified")}
+                className={`px-4 py-2 font-semibold rounded-xl transition-colors border-2 ${
+                  activeTab === "verified"
+                    ? "bg-rose-900 text-white border-rose-900"
+                    : "bg-white text-rose-900 border-rose-200 hover:border-rose-300"
+                }`}
+              >
+                Potrjene
+              </button>
+              <button
                 onClick={() => setActiveTab("unliked")}
                 className={`px-4 py-2 font-semibold rounded-xl transition-colors border-2 ${
                   activeTab === "unliked"
@@ -159,7 +173,9 @@ function StatsModal({ isOpen, onClose }) {
               <p className="text-neutral-600 text-lg">
                 {activeTab === "unverified"
                   ? "Ni nepotrjenih besed! 🎉"
-                  : "Ni besed z dislajki! 🎉"}
+                  : activeTab === "verified"
+                    ? "Ni potrjenih besed!"
+                    : "Ni besed z dislajki! 🎉"}
               </p>
             </div>
           ) : (
@@ -179,7 +195,9 @@ function StatsModal({ isOpen, onClose }) {
                           <span className="text-sm text-neutral-500">
                             {activeTab === "unverified"
                               ? `${(word.confidence * 100).toFixed(0)}% zaupanje`
-                              : `${word.dislikeCount} dislajkov`}
+                              : activeTab === "verified"
+                                ? `${(word.confidence * 100).toFixed(0)}% zaupanje`
+                                : `${word.dislikeCount} dislajkov`}
                           </span>
                         </div>
 
@@ -214,7 +232,9 @@ function StatsModal({ isOpen, onClose }) {
                           className="flex items-center gap-2 px-4 py-2 bg-amber-100 hover:bg-amber-200 text-amber-900 font-semibold rounded-xl transition-colors border-2 border-amber-200"
                         >
                           <Edit className="w-4 h-4" />
-                          <span className="hidden sm:inline">Uredi</span>
+                          <span className="hidden sm:inline">
+                            {activeTab === "verified" ? "Uredi znova" : "Uredi"}
+                          </span>
                         </button>
                         {activeTab === "unverified" && (
                           <button

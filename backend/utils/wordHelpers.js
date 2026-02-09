@@ -34,6 +34,19 @@ function filterUnverifiedWords(words, metadataMap) {
 }
 
 /**
+ * Get verified words from all words
+ * @param {Array} words - All words
+ * @param {Object} metadataMap - Map of wordId -> metadata
+ * @returns {Array} Verified words
+ */
+function filterVerifiedWords(words, metadataMap) {
+  return words.filter((word) => {
+    const meta = metadataMap[word._id.toString()];
+    return meta && meta.potrjeno === true;
+  });
+}
+
+/**
  * Get words with dislikes
  * @param {Array} words - All words
  * @param {Object} metadataMap - Map of wordId -> metadata
@@ -72,6 +85,7 @@ function countVerifiedWords(metadataMap) {
 module.exports = {
   fetchWordsWithMetadata,
   filterUnverifiedWords,
+  filterVerifiedWords,
   getWordsWithDislikes,
   countVerifiedWords,
 };

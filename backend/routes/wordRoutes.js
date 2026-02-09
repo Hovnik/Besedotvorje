@@ -18,6 +18,9 @@ router.post("/:wordId/vote", voteRateLimiter, wordController.voteOnWord);
 // Get unverified words (paginated)
 router.get("/unverified", wordController.getUnverifiedWords);
 
+// Get verified words (paginated)
+router.get("/verified", wordController.getVerifiedWords);
+
 // Get most unliked words (paginated)
 router.get("/most-unliked", wordController.getMostUnlikedWords);
 
