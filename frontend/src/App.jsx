@@ -6,17 +6,13 @@ import Header from "./components/Header";
 import SignInButton from "./components/SignInButton";
 import SignInModal from "./modals/SignInModal";
 import StatsModal from "./modals/StatsModal";
-import EditResultModal from "./modals/EditResultModal";
 import Footer from "./components/Footer";
 
 function App() {
   const [hasResult, setHasResult] = useState(false);
   const [isSignInOpen, setIsSignInOpen] = useState(false);
   const [isStatsOpen, setIsStatsOpen] = useState(false);
-  const [isEditOpen, setIsEditOpen] = useState(false);
-  const [editingWord, setEditingWord] = useState(null);
   const [user, setUser] = useState(null);
-  const [statsVersion, setStatsVersion] = useState(0);
 
   useEffect(() => {
     // Check if user is logged in
@@ -25,18 +21,6 @@ function App() {
       setUser(JSON.parse(storedUser));
     }
   }, []);
-
-  const handleEdit = (word) => {
-    setEditingWord(word);
-    setIsEditOpen(true);
-  };
-
-  const handleSaveEdit = (updatedWord) => {
-    // Refresh stats if needed
-    setEditingWord(null);
-  };
-
-  const refreshStats = () => setStatsVersion((v) => v + 1);
 
   return (
     <div className="min-h-screen relative">
@@ -70,20 +54,7 @@ function App() {
         onClose={() => setIsSignInOpen(false)}
       />
 
-      <StatsModal
-        isOpen={isStatsOpen}
-        onClose={() => setIsStatsOpen(false)}
-        onEdit={handleEdit}
-        refreshVersion={statsVersion}
-      />
-
-      <EditResultModal
-        isOpen={isEditOpen}
-        onClose={() => setIsEditOpen(false)}
-        result={editingWord}
-        onSave={handleSaveEdit}
-        onRefreshStats={refreshStats}
-      />
+      <StatsModal isOpen={isStatsOpen} onClose={() => setIsStatsOpen(false)} />
 
       <Footer />
     </div>

@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import axios from "axios";
 import { ThumbsUp, ThumbsDown } from "lucide-react";
 
-function VoteButtons({ wordId, initialLikes = 0, initialDislikes = 0, word }) {
+function VoteButtons({ wordId, initialLikes = 0, initialDislikes = 0 }) {
   const [likes, setLikes] = useState(initialLikes);
   const [dislikes, setDislikes] = useState(initialDislikes);
   const [userVote, setUserVote] = useState(null); // 'like', 'dislike', or null

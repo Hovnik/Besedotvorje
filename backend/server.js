@@ -60,19 +60,6 @@ app.use(express.json({ limit: "10kb" })); // Limit body size to prevent large pa
 // Security: Prevent NoSQL injection
 app.use(mongoSanitize());
 
-// Security: Prevent parameter pollution
-app.use((req, res, next) => {
-  // Remove any duplicate or suspicious parameters
-  if (req.body && typeof req.body === "object") {
-    Object.keys(req.body).forEach((key) => {
-      if (Array.isArray(req.body[key])) {
-        req.body[key] = req.body[key][0]; // Take only first value
-      }
-    });
-  }
-  next();
-});
-
 // MongoDB Connection
 const MONGODB_URI =
   process.env.MONGODB_URI || "mongodb://localhost:27017/besedotvorje";

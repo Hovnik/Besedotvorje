@@ -1,6 +1,7 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { X } from "lucide-react";
 import axios from "axios";
+import { useScrollLock } from "../hooks/useScrollLock";
 
 function SignInModal({ isOpen, onClose }) {
   const [password, setPassword] = useState("");
@@ -8,24 +9,7 @@ function SignInModal({ isOpen, onClose }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  // Lock background scroll while modal is open
-  useEffect(() => {
-    if (!isOpen || typeof window === "undefined") return;
-    const scrollY = window.scrollY || document.documentElement.scrollTop;
-    document.body.style.position = "fixed";
-    document.body.style.top = `-${scrollY}px`;
-    document.body.style.left = "0";
-    document.body.style.right = "0";
-
-    return () => {
-      const top = parseInt(document.body.style.top || "0") * -1 || 0;
-      document.body.style.position = "";
-      document.body.style.top = "";
-      document.body.style.left = "";
-      document.body.style.right = "";
-      window.scrollTo(0, top);
-    };
-  }, [isOpen]);
+  useScrollLock(isOpen);
 
   if (!isOpen) return null;
 
@@ -43,13 +27,8 @@ function SignInModal({ isOpen, onClose }) {
       const data = response.data;
 
       if (response.status === 200 && data.success) {
-        // Handle successful login
-        console.log("Prijava uspešna:", data);
-        // Store user data in localStorage or context
         localStorage.setItem("user", JSON.stringify(data.user));
-        // Close modal
         onClose();
-        // Optionally reload the page or update app state
         window.location.reload();
       } else {
         setError(data.error || "Prijava ni uspela");

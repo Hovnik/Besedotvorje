@@ -3,11 +3,13 @@ import axios from "axios";
 import { Search } from "lucide-react";
 import VoteButtons from "./VoteButtons";
 import EditResultModal from "../modals/EditResultModal";
+import { buildWordFormation } from "../utils/wordFormation";
 
 function WordAnalyzer({ onResultChange }) {
   const [word, setWord] = useState("");
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
+  const [metadata, setMetadata] = useState(null);
   const [error, setError] = useState(null);
   const [isEditOpen, setIsEditOpen] = useState(false);
 
@@ -19,6 +21,7 @@ function WordAnalyzer({ onResultChange }) {
   useEffect(() => {
     const handler = () => {
       setResult(null);
+      setMetadata(null);
     };
 
     if (typeof window !== "undefined") {
@@ -46,9 +49,10 @@ function WordAnalyzer({ onResultChange }) {
 
     try {
       const response = await axios.post("/api/words/analyze", {
-        word: word.trim(),
+        beseda: word.trim(),
       });
-      setResult(response.data);
+      setResult(response.data.data); // Extract the Word document from response
+      setMetadata(response.data.metadata || { likes: 0, dislikes: 0 }); // Extract metadata
       setWord("");
     } catch (err) {
       console.error("Error:", err);
@@ -60,69 +64,35 @@ function WordAnalyzer({ onResultChange }) {
 
   const exampleWords = ["voznik", "srečelov", "predpostavka", "učiteljica"];
 
-  const renderColoredAnalysis = (text) => {
-    if (!text) return text;
+  /**
+   * Render word formation with highlighted koncnica
+   * koncnicaStart indicates where the koncnica begins (gets colored red)
+   */
+  const renderColoredFormation = (formationData) => {
+    if (!formationData || !formationData.text) return null;
 
+    const { text, koncnicaStart } = formationData;
     const result = [];
-    let currentIndex = 0;
 
-    for (let i = 0; i < text.length; i++) {
-      const char = text[i];
-
-      // Check if character is '∅'
-      if (char === "∅") {
-        // Add any accumulated normal text before this character
-        if (i > currentIndex) {
-          result.push(
-            <span key={`normal-${currentIndex}`}>
-              {text.substring(currentIndex, i)}
-            </span>,
-          );
-        }
-
-        // Add the '∅' character with color
-        result.push(
-          <span key={`empty-${i}`} className="text-rose-500 font-bold">
-            ∅
-          </span>,
-        );
-
-        currentIndex = i + 1;
-        continue; // Skip further checks for this character
-      }
-
-      // Check if character is uppercase (and is a letter)
-      if (char !== char.toLowerCase() && char.match(/[A-ZČĆŽŠĐ]/)) {
-        // Add any accumulated normal text before this uppercase char
-        if (i > currentIndex) {
-          result.push(
-            <span key={`normal-${currentIndex}`}>
-              {text.substring(currentIndex, i)}
-            </span>,
-          );
-        }
-
-        // Add the lowercase version of the uppercase char with color
-        result.push(
-          <span key={`colored-${i}`} className="text-rose-500 font-bold">
-            {char.toLowerCase()}
-          </span>,
-        );
-
-        currentIndex = i + 1;
-      }
+    if (koncnicaStart === -1) {
+      // No koncnica to highlight, just return the text
+      return text;
     }
 
-    // Add any remaining text
-    if (currentIndex < text.length) {
-      result.push(
-        <span key={`normal-${currentIndex}`}>
-          {text.substring(currentIndex)}
-        </span>,
-      );
+    // Add text before koncnica (normal color)
+    if (koncnicaStart > 0) {
+      result.push(<span key="base">{text.substring(0, koncnicaStart)}</span>);
     }
 
-    return result.length > 0 ? result : text;
+    // Add koncnica (red color)
+    const koncnicaText = text.substring(koncnicaStart);
+    result.push(
+      <span key="koncnica" className="text-rose-500 font-bold">
+        {koncnicaText}
+      </span>,
+    );
+
+    return result;
   };
 
   return (
@@ -236,12 +206,13 @@ function WordAnalyzer({ onResultChange }) {
               </button>
             </div>
           )}
+
           {/* Check if it's not a derivative word */}
-          {result.analysis.toLowerCase().includes("ni tvorjenka") ? (
+          {!result.tvorjenka || result.postopek === "netvorjenka" ? (
             <div className="space-y-6">
               <div className="bg-gradient-to-r from-amber-100 to-orange-100 border-2 border-amber-300 rounded-2xl p-4 sm:p-6 md:p-8 shadow-md">
                 <p className="text-lg sm:text-xl md:text-2xl font-bold text-neutral-800">
-                  <span className="text-rose-900">{result.word}</span> ni
+                  <span className="text-rose-900">{result.beseda}</span> ni
                   tvorjenka
                 </p>
               </div>
@@ -250,9 +221,8 @@ function WordAnalyzer({ onResultChange }) {
               <div className="pt-4">
                 <VoteButtons
                   wordId={result._id}
-                  initialLikes={result.likes || 0}
-                  initialDislikes={result.dislikes || 0}
-                  word={result.word}
+                  initialLikes={metadata?.likes || 0}
+                  initialDislikes={metadata?.dislikes || 0}
                 />
               </div>
             </div>
@@ -261,11 +231,11 @@ function WordAnalyzer({ onResultChange }) {
               <div>
                 <div className="flex items-baseline gap-3 flex-wrap">
                   <p className="text-3xl sm:text-4xl font-black text-rose-900">
-                    {result.word}
+                    {result.beseda}
                   </p>
-                  {result.type && (
+                  {result.postopek && (
                     <span className="px-3 py-1 bg-gradient-to-r from-amber-200 to-orange-200 text-rose-900 text-xs sm:text-sm font-semibold rounded-lg relative -top-2">
-                      {result.type}
+                      {result.postopek}
                     </span>
                   )}
                 </div>
@@ -280,24 +250,60 @@ function WordAnalyzer({ onResultChange }) {
                 </p>
                 <div className="bg-gradient-to-br from-amber-50 to-orange-50 rounded-2xl p-4 sm:p-6 border border-rose-200/30">
                   <p className="text-base sm:text-lg md:text-xl text-neutral-800 whitespace-pre-wrap leading-relaxed font-medium">
-                    {renderColoredAnalysis(result.analysis)}
+                    {renderColoredFormation(buildWordFormation(result))}
                   </p>
                 </div>
               </div>
+
+              {/* Additional Info */}
+              {result.slovnicno && Object.keys(result.slovnicno).length > 0 && (
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  {result.slovnicno.besedna_vrsta && (
+                    <div className="bg-white rounded-xl p-4 border border-rose-100">
+                      <p className="text-xs font-semibold text-neutral-500 uppercase tracking-wide mb-1">
+                        Besedna vrsta
+                      </p>
+                      <p className="text-sm font-bold text-rose-900">
+                        {result.slovnicno.besedna_vrsta}
+                      </p>
+                    </div>
+                  )}
+                  {result.slovnicno.spol && (
+                    <div className="bg-white rounded-xl p-4 border border-rose-100">
+                      <p className="text-xs font-semibold text-neutral-500 uppercase tracking-wide mb-1">
+                        Spol
+                      </p>
+                      <p className="text-sm font-bold text-rose-900">
+                        {result.slovnicno.spol}
+                      </p>
+                    </div>
+                  )}
+                  {result.slovnicno.koncnica && (
+                    <div className="bg-white rounded-xl p-4 border border-rose-100">
+                      <p className="text-xs font-semibold text-neutral-500 uppercase tracking-wide mb-1">
+                        Končnica
+                      </p>
+                      <p className="text-sm font-bold text-rose-900">
+                        {result.slovnicno.koncnica}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Vote Buttons */}
               <div className="pt-4">
                 <VoteButtons
                   wordId={result._id}
-                  initialLikes={result.likes || 0}
-                  initialDislikes={result.dislikes || 0}
-                  word={result.word}
+                  initialLikes={metadata?.likes || 0}
+                  initialDislikes={metadata?.dislikes || 0}
                 />
               </div>
             </div>
           )}
         </div>
       )}
+
       <EditResultModal
         isOpen={isEditOpen}
         onClose={() => setIsEditOpen(false)}

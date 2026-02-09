@@ -6,7 +6,9 @@
   "scripts": {
     "start": "node server.js",
     "dev": "nodemon server.js",
-    "create-user": "node scripts/createUser.js"
+    "create-user": "node scripts/createUser.js",
+    "export-training": "node scripts/exportTrainingData.js",
+    "fix-indexes": "node scripts/fixIndexes.js"
   },
   "keywords": [
     "slovenian",
@@ -23,7 +25,6 @@
     "express": "^4.18.2",
     "express-mongo-sanitize": "^2.2.0",
     "express-rate-limit": "^8.2.1",
-    "express-validator": "^7.3.1",
     "helmet": "^8.1.0",
     "mongoose": "^8.0.0",
     "openai": "^4.28.0"

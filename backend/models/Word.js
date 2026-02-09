@@ -1,49 +1,48 @@
 const mongoose = require("mongoose");
 
 const wordSchema = new mongoose.Schema({
-  word: {
+  beseda: {
     type: String,
     required: true,
     unique: true,
     lowercase: true,
     trim: true,
   },
-  type: {
-    type: String,
-    default: "",
-  },
-  analysis: {
-    type: String,
+
+  tvorjenka: {
+    type: Boolean,
     required: true,
   },
-  // how many users liked this and disliked this
-  likes: {
-    type: Number,
-    default: 0,
+
+  postopek: {
+    type: String,
+    enum: ["izpeljava", "zlaganje", "netvorjenka"],
+    required: true,
   },
-  dislikes: {
-    type: Number,
-    default: 0,
-  },
-  // Track votes by IP (hashed for privacy)
-  votes: [
-    {
-      ipHash: String,
-      voteType: String, // 'like' or 'dislike'
+
+  slovnicno: {
+    besedna_vrsta: {
+      type: String,
+      enum: ["samostalnik", "pridevnik", "glagol", "prislov"],
     },
-  ],
-  createdAt: {
-    type: Date,
-    default: Date.now,
+    spol: {
+      type: String,
+      enum: ["moški", "ženski", "srednji"],
+    },
+    koncnica: { type: String },
   },
-  lastAccessed: {
-    type: Date,
-    default: Date.now,
-  },
-  accessCount: {
-    type: Number,
-    default: 1,
-  },
+
+  /* IZPELJAVA */
+  osnova: { type: String },
+  predpone: { type: [String], default: [] },
+  pripone: { type: [String], default: [] },
+
+  /* ZLAGANJE */
+  osnove: { type: [String], default: [] },
+
+  confidence: { type: Number, min: 0, max: 1 },
 });
 
-module.exports = mongoose.model("Word", wordSchema);
+const Word = mongoose.model("Word", wordSchema);
+
+module.exports = Word;

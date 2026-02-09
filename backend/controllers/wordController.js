@@ -1,356 +1,594 @@
 const OpenAI = require("openai");
 const Word = require("../models/Word");
+const WordMetadata = require("../models/WordMetadata");
 const crypto = require("crypto");
+const {
+  fetchWordsWithMetadata,
+  filterUnverifiedWords,
+  getWordsWithDislikes,
+  countVerifiedWords,
+} = require("../utils/wordHelpers");
 
 // Initialize OpenAI client
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-// The prompt template
-const PROMPT_TEMPLATE = `Navedi besedotvorno podstavo besede: {word}.
-Besedotvorna podstava vključuje **celotno tvorjenko**, torej vse sestavne dele besede, kot je zgrajena.
-- Če beseda ni tvorjenka, odgovori samo: "Ni tvorjenka".
-- Naj bo odgovor kratek in brez pojasnil.
+// Model ID - can be base model or fine-tuned model
+const MODEL_ID = process.env.FT_MODEL_ID || "gpt-4.1-mini";
 
-Primeri:
-Učenec -> uč-enec
-Vstopati -> v-stop-ati
-Mizar -> miz-ar
-Avtocesta -> avt-o-cest-a
-Zakonolom -> zakon-o-lom
-Podoficir -> pod-oficir
-Okoljevarstvenik -> okolje-varstv-enik
-Nadstrešek -> nad-streš-ek
-Drobcken -> drob-ck-en
-Gasilec -> gas-ilec
+/**
+ * Build the strict prompt that enforces JSON output
+ */
+function buildPrompt(word) {
+  return `You are a linguistic analyzer for Slovenian word formation.
 
-Bodi še pozoren na posebne primere, kot so:
-Križišče -> križ-išče
-Srednješolec -> srednj-e-šol-ec
-Srednjeveški -> srednj-e-veški
+RULES:
+- Output ONLY valid JSON
+- No explanations
+- No extra fields
+- Use only these postopek values: "izpeljava", "zlaganje", "netvorjenka"
 
-Vrni le kar je na desni strani puščice ->.
-Če beseda je tvorjenka, navedi tip tvorjenke (npr. "izpeljanka", "zloženka", "sestavljenka", "krn", "mešana tvorba", "sklop") na koncu odgovora.
-Če beseda vsebuje končnico, jo napiši z velikimi črkami, na primer:
-Križišče -> križ+iščE
-Gnojilo -> gnoj-ilO
-Stojišče -> stoj-iščE
-Barvilo -> barv-ilO
-Čistilo -> čist-ilO
-Gradivo -> grad-ivO
-Če beseda ne vsebuje končnice, napiši celotno tvorjenko z malimi črkami, in na koncu dodaj simbola '-∅', na primer:
-Mizar -> miz-ar-∅
-Zemljevid -> zemlj-e-vid-∅
-Kamnolom -> kamn-olom-∅
-Besedotvorno podstavo in tip tvorjenke loči z vejico, na primer: Križišče -> križ-iščE, zloženka.
-`;
+SCHEMA:
+{
+  "beseda": string,
+  "tvorjenka": boolean,
+  "postopek": "izpeljava" | "zlaganje" | "netvorjenka",
+  "slovnicno": {
+    "besedna_vrsta"?: "samostalnik" | "pridevnik" | "glagol" | "prislov",
+    "spol"?: "moški" | "ženski" | "srednji",
+    "koncnica"?: string
+  },
+  "osnova"?: string,
+  "predpone"?: string[],
+  "pripone"?: string[],
+  "osnove"?: string[],
+  "confidence": number
+}
 
-// Extract word type from analysis (e.g., "izpeljanka", "zloženka")
-const extractWordType = (analysis) => {
-  if (!analysis) return { cleanAnalysis: analysis, wordType: null };
+Analyze this word:
+"${word}"`;
+}
 
-  // Look for specific word types
-  const typeKeywords = [
-    "izpeljanka",
-    "zloženka",
-    "sestavljenka",
-    "krn",
-    "mešana tvorba",
-    "sklop",
-  ];
-
-  // Try to find the type keyword in the text
-  for (const keyword of typeKeywords) {
-    const regex = new RegExp(`\\b${keyword}\\b`, "i");
-    if (regex.test(analysis)) {
-      // Remove the type information from the analysis, including preceding commas
-      const cleanAnalysis = analysis
-        .replace(
-          new RegExp(
-            `\\s*,?\\s*\\(?\\s*${keyword}\\s*\\)?\\s*[.,;]*\\s*`,
-            "gi",
-          ),
-          " ",
-        )
-        .replace(/\s+/g, " ")
-        .replace(/,\s*$/, "") // Remove trailing comma
-        .trim();
-      return { cleanAnalysis, wordType: keyword };
-    }
-  }
-
-  return { cleanAnalysis: analysis, wordType: null };
-};
-
-exports.analyzeWord = async (req, res) => {
+/**
+ * Call OpenAI API with strict JSON formatting
+ */
+async function analyzeWordWithAI(word, modelId = MODEL_ID) {
   try {
-    const { word } = req.body;
-
-    // Input validation
-    if (!word || typeof word !== "string" || !word.trim()) {
-      return res.status(400).json({ error: "Word is required" });
-    }
-
-    // Sanitize input: remove special characters except Slovenian letters
-    const sanitized = word.trim().replace(/[^a-zA-ZčćžšđČĆŽŠĐ\s-]/g, "");
-
-    if (!sanitized) {
-      return res.status(400).json({ error: "Invalid word format" });
-    }
-
-    // Length validation (prevent extremely long inputs)
-    if (sanitized.length > 50) {
-      return res
-        .status(400)
-        .json({ error: "Word is too long (max 50 characters)" });
-    }
-
-    const normalizedWord = sanitized.toLowerCase();
-
-    // Check if word exists in database
-    let wordDoc = await Word.findOne({ word: normalizedWord });
-
-    if (wordDoc) {
-      // Word found in DB - return cached result
-      console.log(`📦 Cache hit for: ${normalizedWord}`);
-
-      // Update access information
-      wordDoc.lastAccessed = new Date();
-      wordDoc.accessCount += 1;
-      await wordDoc.save();
-
-      return res.json({
-        word: normalizedWord,
-        analysis: wordDoc.analysis,
-        type: wordDoc.type,
-        fromCache: true,
-        accessCount: wordDoc.accessCount,
-        likes: wordDoc.likes,
-        dislikes: wordDoc.dislikes,
-        _id: wordDoc._id,
-      });
-    }
-
-    // Word not in DB - call ChatGPT API
-    console.log(`🤖 Calling ChatGPT for: ${normalizedWord}`);
-
-    if (!process.env.OPENAI_API_KEY) {
-      return res.status(500).json({
-        error:
-          "OpenAI API key not configured. Please add OPENAI_API_KEY to .env file",
-      });
-    }
-
-    const prompt = PROMPT_TEMPLATE.replace("{word}", normalizedWord);
-
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4.1", // You can change to "gpt-3.5-turbo" for faster/cheaper responses
+    const response = await openai.chat.completions.create({
+      model: modelId,
       messages: [
         {
           role: "system",
-          content: "Si strokovnjak za slovensko besedotvorje in morfologijo.",
+          content:
+            "You are a Slovenian word-formation analyzer. You output only valid JSON. Never add explanations or extra text.",
         },
         {
           role: "user",
-          content: prompt,
+          content: buildPrompt(word),
         },
       ],
-      temperature: 0.3,
-      max_tokens: 500,
+      temperature: 0, // Very important for morphology - deterministic output
+      response_format: { type: "json_object" }, // Force JSON mode
     });
 
-    const analysis = completion.choices[0].message.content.trim();
-
-    // Extract word type from analysis
-    const { cleanAnalysis, wordType } = extractWordType(analysis);
-
-    // Save to database
-    wordDoc = new Word({
-      word: normalizedWord,
-      analysis: cleanAnalysis,
-      type: wordType || "",
-    });
-
-    await wordDoc.save();
-    console.log(`💾 Saved to DB: ${normalizedWord}`);
-
-    res.json({
-      word: normalizedWord,
-      analysis: cleanAnalysis,
-      type: wordType,
-      fromCache: false,
-      accessCount: 1,
-      likes: 0,
-      dislikes: 0,
-      _id: wordDoc._id,
-    });
+    const content = response.choices[0].message.content;
+    return JSON.parse(content);
   } catch (error) {
-    console.error("Error analyzing word:", error);
+    console.error("AI Analysis Error:", error.message);
+    throw new Error("Failed to analyze word with AI");
+  }
+}
 
-    // Handle OpenAI specific errors
-    if (error.response) {
-      return res.status(error.response.status).json({
-        error: "OpenAI API error: " + error.response.data.error.message,
+/**
+ * Validate AI output BEFORE saving to database
+ */
+function validateAIOutput(data) {
+  // Required fields
+  if (!data.beseda || typeof data.beseda !== "string") {
+    throw new Error(
+      "Invalid AI output: beseda is required and must be a string",
+    );
+  }
+
+  if (typeof data.tvorjenka !== "boolean") {
+    throw new Error("Invalid AI output: tvorjenka must be a boolean");
+  }
+
+  if (!["izpeljava", "zlaganje", "netvorjenka"].includes(data.postopek)) {
+    throw new Error(
+      "Invalid AI output: postopek must be izpeljava, zlaganje, or netvorjenka",
+    );
+  }
+
+  // Validation based on postopek
+  if (data.postopek === "izpeljava" && !data.osnova) {
+    throw new Error("Invalid AI output: izpeljava requires osnova");
+  }
+
+  if (
+    data.postopek === "zlaganje" &&
+    (!data.osnove || data.osnove.length < 2)
+  ) {
+    throw new Error("Invalid AI output: zlaganje requires at least 2 osnove");
+  }
+
+  // Confidence must be between 0 and 1
+  if (
+    typeof data.confidence !== "number" ||
+    data.confidence < 0 ||
+    data.confidence > 1
+  ) {
+    throw new Error(
+      "Invalid AI output: confidence must be a number between 0 and 1",
+    );
+  }
+
+  return true;
+}
+
+/**
+ * Save word and metadata to database
+ */
+async function saveWordToDatabase(aiData) {
+  // Create the Word document
+  const word = new Word({
+    beseda: aiData.beseda.toLowerCase().trim(),
+    tvorjenka: aiData.tvorjenka,
+    postopek: aiData.postopek,
+    slovnicno: aiData.slovnicno || {},
+    osnova: aiData.osnova || undefined,
+    predpone: aiData.predpone || [],
+    pripone: aiData.pripone || [],
+    osnove: aiData.osnove || [],
+    confidence: aiData.confidence,
+  });
+
+  await word.save();
+
+  // Create metadata for the word
+  await WordMetadata.create({
+    wordId: word._id,
+    confidence: aiData.confidence,
+    potrjeno: false, // Will be confirmed by human later
+  });
+
+  return word;
+}
+
+/**
+ * Main controller: Analyze a word
+ */
+exports.analyzeWord = async (req, res) => {
+  try {
+    const { beseda } = req.body;
+
+    // Validate input
+    if (!beseda || typeof beseda !== "string") {
+      return res.status(400).json({
+        error: "Please provide a valid word (beseda)",
       });
     }
 
-    res.status(500).json({
-      error: "Error analyzing word: " + error.message,
+    const wordToAnalyze = beseda.toLowerCase().trim();
+
+    // Check if word already exists in database
+    let existingWord = await Word.findOne({ beseda: wordToAnalyze });
+
+    if (existingWord) {
+      // Word exists - get metadata and increment access count
+      const metadata = await WordMetadata.findOneAndUpdate(
+        { wordId: existingWord._id },
+        { $inc: { accessCount: 1 } },
+        { new: true, upsert: true },
+      );
+
+      return res.json({
+        source: "database",
+        data: existingWord,
+        metadata: {
+          likes: metadata.likes || 0,
+          dislikes: metadata.dislikes || 0,
+        },
+      });
+    }
+
+    // Word doesn't exist - analyze with AI
+    const aiResult = await analyzeWordWithAI(wordToAnalyze);
+
+    // Validate AI output
+    validateAIOutput(aiResult);
+
+    // Save to database
+    const savedWord = await saveWordToDatabase(aiResult);
+
+    // Get metadata for the new word
+    const metadata = await WordMetadata.findOne({ wordId: savedWord._id });
+
+    return res.json({
+      source: "ai",
+      data: savedWord,
+      metadata: {
+        likes: metadata?.likes || 0,
+        dislikes: metadata?.dislikes || 0,
+      },
+    });
+  } catch (error) {
+    console.error("Error in analyzeWord:", error);
+    return res.status(500).json({
+      error: "Failed to analyze word",
+      details: error.message,
     });
   }
 };
 
-// Update an existing word's analysis and type
+/**
+ * Update an existing word
+ */
 exports.updateWord = async (req, res) => {
   try {
     const { id } = req.params;
-    const { type, analysis } = req.body;
+    const updateData = req.body;
 
-    // Validate id
-    if (!id || !id.match(/^[0-9a-fA-F]{24}$/)) {
-      return res.status(400).json({ error: "Invalid word ID" });
-    }
-
-    if (!analysis || typeof analysis !== "string" || !analysis.trim()) {
-      return res.status(400).json({ error: "Analysis text is required" });
-    }
-
-    // Limit size to avoid abuse
-    const cleanAnalysis = analysis.trim().slice(0, 10000);
-    const cleanType = type ? String(type).trim().slice(0, 200) : "";
-
-    const wordDoc = await Word.findById(id);
-    if (!wordDoc) {
-      return res.status(404).json({ error: "Word not found" });
-    }
-
-    wordDoc.analysis = cleanAnalysis;
-    wordDoc.type = cleanType;
-    await wordDoc.save();
-
-    // Reset likes/dislikes on manual edit
-    wordDoc.likes = 0;
-    wordDoc.dislikes = 0;
-    wordDoc.votes = [];
-    await wordDoc.save();
-
-    res.json({
-      success: true,
-      _id: wordDoc._id,
-      word: wordDoc.word,
-      analysis: wordDoc.analysis,
-      type: wordDoc.type,
-    });
-  } catch (error) {
-    console.error("Error updating word:", error);
-    res.status(500).json({ error: "Error updating word" });
-  }
-};
-
-// Vote on a word analysis (like, dislike, or remove vote)
-exports.voteOnWord = async (req, res) => {
-  try {
-    const { wordId } = req.params;
-    const { voteType } = req.body;
-
-    // Validate wordId format (MongoDB ObjectId)
-    if (!wordId.match(/^[0-9a-fA-F]{24}$/)) {
-      return res.status(400).json({ error: "Invalid word ID" });
-    }
-
-    // Validate voteType
-    if (voteType !== null && voteType !== "like" && voteType !== "dislike") {
+    // Validate ID
+    if (!id) {
       return res.status(400).json({
-        error: "Invalid vote type. Must be 'like', 'dislike', or null",
+        error: "Word ID is required",
       });
     }
 
-    const word = await Word.findById(wordId);
-
+    // Find the word
+    const word = await Word.findById(id);
     if (!word) {
-      return res.status(404).json({ error: "Word not found" });
+      return res.status(404).json({
+        error: "Word not found",
+      });
     }
 
-    // Get user's IP address (handle proxies)
-    const ip =
-      req.headers["x-forwarded-for"]?.split(",")[0].trim() ||
-      req.socket.remoteAddress ||
-      req.ip;
+    // Validate and update fields
+    if (typeof updateData.tvorjenka === "boolean") {
+      word.tvorjenka = updateData.tvorjenka;
 
-    // Hash IP for privacy
-    const ipHash = crypto.createHash("sha256").update(ip).digest("hex");
-
-    // Initialize votes array if it doesn't exist
-    if (!word.votes) {
-      word.votes = [];
+      // If not tvorjenka, set postopek to netvorjenka
+      if (!updateData.tvorjenka) {
+        word.postopek = "netvorjenka";
+      }
     }
 
-    // Find existing vote from this IP
-    const existingVoteIndex = word.votes.findIndex((v) => v.ipHash === ipHash);
-    const existingVote =
-      existingVoteIndex >= 0 ? word.votes[existingVoteIndex] : null;
-
-    // If user already voted, remove the old vote
-    if (existingVote) {
-      word.votes.splice(existingVoteIndex, 1);
+    if (
+      updateData.postopek &&
+      ["izpeljava", "zlaganje", "netvorjenka"].includes(updateData.postopek)
+    ) {
+      word.postopek = updateData.postopek;
     }
 
-    // Add new vote if provided (and different from existing)
-    if (voteType && voteType !== existingVote?.voteType) {
-      word.votes.push({ ipHash, voteType });
+    // Update slovnicno
+    if (updateData.slovnicno) {
+      word.slovnicno = word.slovnicno || {};
+
+      if (updateData.slovnicno.besedna_vrsta) {
+        word.slovnicno.besedna_vrsta = updateData.slovnicno.besedna_vrsta;
+      }
+      if (updateData.slovnicno.spol) {
+        word.slovnicno.spol = updateData.slovnicno.spol;
+      }
+      if (updateData.slovnicno.koncnica !== undefined) {
+        word.slovnicno.koncnica = updateData.slovnicno.koncnica || undefined;
+      }
+
+      // Mark nested object as modified for Mongoose
+      word.markModified("slovnicno");
     }
 
-    // Recalculate likes and dislikes from votes array
-    word.likes = word.votes.filter((v) => v.voteType === "like").length;
-    word.dislikes = word.votes.filter((v) => v.voteType === "dislike").length;
+    // Update izpeljava fields
+    if (word.postopek === "izpeljava") {
+      // Clear zlaganje fields
+      word.osnove = [];
+      word.markModified("osnove");
 
+      // Update izpeljava fields
+      if (updateData.osnova !== undefined) {
+        word.osnova = updateData.osnova;
+      }
+      if (Array.isArray(updateData.predpone)) {
+        word.predpone = [...updateData.predpone];
+        word.markModified("predpone");
+      }
+      if (Array.isArray(updateData.pripone)) {
+        word.pripone = [...updateData.pripone];
+        word.markModified("pripone");
+      }
+    }
+    // Update zlaganje fields
+    else if (word.postopek === "zlaganje") {
+      // Clear izpeljava fields
+      word.osnova = undefined;
+      word.predpone = [];
+      word.pripone = [];
+      word.markModified("predpone");
+      word.markModified("pripone");
+
+      // Update osnove
+      if (Array.isArray(updateData.osnove)) {
+        word.osnove = [...updateData.osnove];
+        word.markModified("osnove");
+      }
+    }
+    // Clear all derivative fields for netvorjenka
+    else if (word.postopek === "netvorjenka") {
+      word.osnova = undefined;
+      word.predpone = [];
+      word.pripone = [];
+      word.osnove = [];
+      word.markModified("predpone");
+      word.markModified("pripone");
+      word.markModified("osnove");
+    }
+
+    // Save updated word
     await word.save();
 
-    res.json({
-      _id: word._id,
-      word: word.word,
-      likes: word.likes,
-      dislikes: word.dislikes,
-      userVote: voteType === existingVote?.voteType ? null : voteType, // Return what vote is now active
+    // Reload from database to ensure we have fresh data
+    const updatedWord = await Word.findById(word._id);
+
+    return res.json({
+      success: true,
+      word: updatedWord,
     });
   } catch (error) {
-    console.error("Error voting on word:", error);
-    res.status(500).json({ error: "Error voting on word" });
+    console.error("Error in updateWord:", error);
+    return res.status(500).json({
+      error: "Failed to update word",
+      details: error.message,
+    });
   }
 };
 
-// Get most disliked words sorted by dislike percentage
-exports.getMostDisliked = async (req, res) => {
+/**
+ * Vote on a word (like/dislike)
+ */
+exports.voteOnWord = async (req, res) => {
   try {
-    // Fetch all words with at least one vote
-    const words = await Word.find({
-      $expr: { $gt: [{ $add: ["$likes", "$dislikes"] }, 0] },
-    }).select("word analysis type likes dislikes");
+    const { wordId } = req.params;
+    const { voteType } = req.body; // 'like', 'dislike', or null to remove vote
 
-    // Calculate dislike percentage and sort
-    const wordsWithPercentage = words.map((word) => {
-      const total = word.likes + word.dislikes;
-      const dislikePercentage = total > 0 ? (word.dislikes / total) * 100 : 0;
-      return {
-        _id: word._id,
-        word: word.word,
-        analysis: word.analysis,
-        type: word.type,
-        likes: word.likes,
-        dislikes: word.dislikes,
-        dislikePercentage: Math.round(dislikePercentage * 10) / 10, // Round to 1 decimal
-      };
-    });
+    // Validate input
+    if (!wordId) {
+      return res.status(400).json({
+        error: "Word ID is required",
+      });
+    }
 
-    // Sort by dislike percentage (descending)
-    wordsWithPercentage.sort(
-      (a, b) => b.dislikePercentage - a.dislikePercentage,
+    if (voteType && !["like", "dislike"].includes(voteType)) {
+      return res.status(400).json({
+        error: "Vote type must be 'like' or 'dislike'",
+      });
+    }
+
+    // Get user's IP address (hashed for privacy)
+    const ip = req.ip || req.connection.remoteAddress;
+    const ipHash = crypto.createHash("sha256").update(ip).digest("hex");
+
+    // Find or create metadata for this word
+    let metadata = await WordMetadata.findOne({ wordId });
+
+    if (!metadata) {
+      // Create new metadata if it doesn't exist
+      metadata = new WordMetadata({
+        wordId,
+        likes: 0,
+        dislikes: 0,
+        votes: [],
+      });
+    }
+
+    // Find user's previous vote
+    const existingVoteIndex = metadata.votes.findIndex(
+      (vote) => vote.ipHash === ipHash,
     );
 
-    res.json(wordsWithPercentage);
+    const previousVote =
+      existingVoteIndex >= 0 ? metadata.votes[existingVoteIndex] : null;
+
+    // Remove previous vote counts
+    if (previousVote) {
+      if (previousVote.voteType === "like") {
+        metadata.likes = Math.max(0, metadata.likes - 1);
+      } else if (previousVote.voteType === "dislike") {
+        metadata.dislikes = Math.max(0, metadata.dislikes - 1);
+      }
+
+      // Remove the vote from array
+      metadata.votes.splice(existingVoteIndex, 1);
+    }
+
+    // Add new vote if provided
+    if (voteType) {
+      if (voteType === "like") {
+        metadata.likes += 1;
+      } else if (voteType === "dislike") {
+        metadata.dislikes += 1;
+      }
+
+      // Add to votes array
+      metadata.votes.push({
+        ipHash,
+        voteType,
+      });
+    }
+
+    // Save metadata
+    await metadata.save();
+
+    return res.json({
+      success: true,
+      likes: metadata.likes,
+      dislikes: metadata.dislikes,
+    });
   } catch (error) {
-    console.error("Error fetching most disliked:", error);
-    res.status(500).json({ error: "Error fetching statistics" });
+    console.error("Error in voteOnWord:", error);
+    return res.status(500).json({
+      error: "Failed to vote on word",
+      details: error.message,
+    });
+  }
+};
+
+/**
+ * Get unverified words (potrjeno = false or not set)
+ * Ordered by confidence (lowest first)
+ * Paginated by 20 per page
+ */
+exports.getUnverifiedWords = async (req, res) => {
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = 20;
+    const skip = (page - 1) * limit;
+
+    const { words, metadataMap } = await fetchWordsWithMetadata();
+    const unverifiedWords = filterUnverifiedWords(words, metadataMap);
+
+    unverifiedWords.sort((a, b) => (a.confidence || 0) - (b.confidence || 0));
+
+    const paginatedWords = unverifiedWords.slice(skip, skip + limit);
+    const totalPages = Math.ceil(unverifiedWords.length / limit);
+
+    return res.json({
+      words: paginatedWords,
+      pagination: {
+        currentPage: page,
+        totalPages,
+        totalWords: unverifiedWords.length,
+        wordsPerPage: limit,
+      },
+    });
+  } catch (error) {
+    console.error("Error in getUnverifiedWords:", error);
+    return res.status(500).json({
+      error: "Failed to fetch unverified words",
+      details: error.message,
+    });
+  }
+};
+
+/**
+ * Mark a word as verified (potrjeno = true)
+ */
+exports.verifyWord = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!id) {
+      return res.status(400).json({
+        error: "Word ID is required",
+      });
+    }
+
+    // Check if word exists
+    const word = await Word.findById(id);
+    if (!word) {
+      return res.status(404).json({
+        error: "Word not found",
+      });
+    }
+
+    // Update metadata to mark as verified
+    await WordMetadata.findOneAndUpdate(
+      { wordId: id },
+      { potrjeno: true },
+      { upsert: true },
+    );
+
+    return res.json({
+      success: true,
+      message: "Word marked as verified",
+    });
+  } catch (error) {
+    console.error("Error in verifyWord:", error);
+    return res.status(500).json({
+      error: "Failed to verify word",
+      details: error.message,
+    });
+  }
+};
+
+/**
+ * Get most unliked words (sorted by number of dislikes)
+ */
+exports.getMostUnlikedWords = async (req, res) => {
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = 20;
+    const skip = (page - 1) * limit;
+
+    // Get all words
+    const allWords = await Word.find().lean();
+
+    // Get metadata for all words
+    const wordIds = allWords.map((w) => w._id);
+    const metadata = await WordMetadata.find({
+      wordId: { $in: wordIds },
+    }).lean();
+
+    // Create a map of wordId -> metadata with dislike count
+    const wordWithDislikes = [];
+    metadata.forEach((meta) => {
+      const word = allWords.find(
+        (w) => w._id.toString() === meta.wordId.toString(),
+      );
+      if (word && meta.votes && meta.votes.length > 0) {
+        // Count dislikes (voteType: "dislike")
+        const dislikeCount = meta.votes.filter(
+          (v) => v.voteType === "dislike",
+        ).length;
+        if (dislikeCount > 0) {
+          wordWithDislikes.push({
+            ...word,
+            dislikeCount,
+          });
+        }
+      }
+    });
+
+    // Sort by dislike count (highest first)
+    wordWithDislikes.sort((a, b) => b.dislikeCount - a.dislikeCount);
+
+    // Paginate
+    const paginatedWords = wordWithDislikes.slice(skip, skip + limit);
+    const totalPages = Math.ceil(wordWithDislikes.length / limit);
+
+    return res.json({
+      words: paginatedWords,
+      pagination: {
+        currentPage: page,
+        totalPages,
+        totalWords: wordWithDislikes.length,
+        wordsPerPage: limit,
+      },
+    });
+  } catch (error) {
+    console.error("Error in getMostUnlikedWords:", error);
+    return res.status(500).json({
+      error: "Failed to fetch most unliked words",
+      details: error.message,
+    });
+  }
+};
+
+/**
+ * Get count of verified words
+ */
+exports.getVerifiedWordsCount = async (req, res) => {
+  try {
+    const { metadataMap } = await fetchWordsWithMetadata();
+    const verifiedCount = countVerifiedWords(metadataMap);
+
+    return res.json({ count: verifiedCount });
+  } catch (error) {
+    console.error("Error in getVerifiedWordsCount:", error);
+    return res.status(500).json({
+      error: "Failed to fetch verified words count",
+      details: error.message,
+    });
   }
 };
