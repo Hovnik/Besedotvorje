@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { X } from "lucide-react";
+import { X, Plus, Trash2, GripVertical } from "lucide-react";
 import axios from "axios";
 import { useScrollLock } from "../hooks/useScrollLock";
 
@@ -12,13 +12,9 @@ function EditResultModal({ isOpen, onClose, result, onSave }) {
   const [spol, setSpol] = useState("");
   const [koncnica, setKoncnica] = useState("");
 
-  // Izpeljava fields
-  const [osnova, setOsnova] = useState("");
-  const [predpone, setPredpone] = useState("");
-  const [pripone, setPripone] = useState("");
-
-  // Zlaganje fields
-  const [osnove, setOsnove] = useState("");
+  // Morfemi (universal structure)
+  const [morfemi, setMorfemi] = useState([]);
+  const [draggedIndex, setDraggedIndex] = useState(null);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -28,33 +24,83 @@ function EditResultModal({ isOpen, onClose, result, onSave }) {
   useEffect(() => {
     if (result) {
       setTvorjenka(result.tvorjenka ?? true);
-      setPostopek(result.postopek || "izpeljava");
+      // Convert array to single value
+      setPostopek(
+        Array.isArray(result.postopek)
+          ? result.postopek[0] || "izpeljava"
+          : result.postopek || "izpeljava",
+      );
 
       setBesednaVrsta(result.slovnicno?.besedna_vrsta || "");
       setSpol(result.slovnicno?.spol || "");
       setKoncnica(result.slovnicno?.koncnica || "");
 
-      setOsnova(result.osnova || "");
-      setPredpone(result.predpone?.join(", ") || "");
-      setPripone(result.pripone?.join(", ") || "");
-
-      setOsnove(result.osnove?.join(", ") || "");
+      // Load morfemi or create empty array, sorted by pozicija
+      if (result.morfemi && result.morfemi.length > 0) {
+        const sorted = [...result.morfemi].sort(
+          (a, b) => a.pozicija - b.pozicija,
+        );
+        setMorfemi(sorted.map((m) => ({ ...m })));
+      } else {
+        setMorfemi([]);
+      }
 
       setError("");
     }
   }, [result]);
 
-  useEffect(() => {
-    if (postopek === "izpeljava") {
-      setOsnove("");
-    } else if (postopek === "zlaganje") {
-      setOsnova("");
-      setPredpone("");
-      setPripone("");
-    }
-  }, [postopek]);
-
   if (!isOpen) return null;
+
+  const addMorfem = () => {
+    setMorfemi([
+      ...morfemi,
+      { tip: "osnova", vrednost: "", pozicija: morfemi.length },
+    ]);
+  };
+
+  const removeMorfem = (index) => {
+    const updated = morfemi.filter((_, i) => i !== index);
+    // Reindex positions
+    updated.forEach((m, i) => {
+      m.pozicija = i;
+    });
+    setMorfemi(updated);
+  };
+
+  const updateMorfem = (index, field, value) => {
+    const updated = [...morfemi];
+    updated[index][field] = value;
+    setMorfemi(updated);
+  };
+
+  const handleDragStart = (index) => {
+    setDraggedIndex(index);
+  };
+
+  const handleDragOver = (e, index) => {
+    e.preventDefault();
+    if (draggedIndex === null || draggedIndex === index) return;
+
+    const updated = [...morfemi];
+    const draggedItem = updated[draggedIndex];
+
+    // Remove from old position
+    updated.splice(draggedIndex, 1);
+    // Insert at new position
+    updated.splice(index, 0, draggedItem);
+
+    // Reindex positions
+    updated.forEach((m, i) => {
+      m.pozicija = i;
+    });
+
+    setMorfemi(updated);
+    setDraggedIndex(index);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedIndex(null);
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -70,47 +116,14 @@ function EditResultModal({ isOpen, onClose, result, onSave }) {
       // Prepare data for update
       const updateData = {
         tvorjenka,
-        postopek: tvorjenka ? postopek : "netvorjenka",
+        postopek: tvorjenka ? [postopek] : ["netvorjenka"],
         slovnicno: {
           besedna_vrsta: besednaVrsta || undefined,
           spol: spol || undefined,
           koncnica: koncnica || undefined,
         },
+        morfemi: tvorjenka ? morfemi.filter((m) => m.vrednost.trim()) : [],
       };
-
-      // Add fields based on postopek
-      if (tvorjenka && postopek === "izpeljava") {
-        updateData.osnova = osnova.trim() || undefined;
-        updateData.predpone = predpone
-          ? predpone
-              .split(",")
-              .map((p) => p.trim())
-              .filter((p) => p)
-          : [];
-        updateData.pripone = pripone
-          ? pripone
-              .split(",")
-              .map((p) => p.trim())
-              .filter((p) => p)
-          : [];
-        updateData.osnove = [];
-      } else if (tvorjenka && postopek === "zlaganje") {
-        updateData.osnove = osnove
-          ? osnove
-              .split(",")
-              .map((o) => o.trim())
-              .filter((o) => o)
-          : [];
-        updateData.osnova = undefined;
-        updateData.predpone = [];
-        updateData.pripone = [];
-      } else {
-        // netvorjenka - clear all derivative fields
-        updateData.osnova = undefined;
-        updateData.predpone = [];
-        updateData.pripone = [];
-        updateData.osnove = [];
-      }
 
       // Update in backend
       const response = await axios.put(`/api/words/${result._id}`, updateData);
@@ -188,29 +201,22 @@ function EditResultModal({ isOpen, onClose, result, onSave }) {
               <label className="block text-sm font-semibold text-rose-900 mb-2 uppercase tracking-wide">
                 Postopek
               </label>
-              <div className="flex gap-3">
-                <button
-                  type="button"
-                  onClick={() => setPostopek("izpeljava")}
-                  className={`flex-1 px-4 py-3 font-semibold rounded-2xl transition-all ${
-                    postopek === "izpeljava"
-                      ? "bg-gradient-to-r from-rose-900 to-rose-700 text-white shadow-lg"
-                      : "bg-white border-2 border-rose-200 text-rose-900 hover:bg-rose-50"
-                  }`}
-                >
-                  Izpeljava
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setPostopek("zlaganje")}
-                  className={`flex-1 px-4 py-3 font-semibold rounded-2xl transition-all ${
-                    postopek === "zlaganje"
-                      ? "bg-gradient-to-r from-rose-900 to-rose-700 text-white shadow-lg"
-                      : "bg-white border-2 border-rose-200 text-rose-900 hover:bg-rose-50"
-                  }`}
-                >
-                  Zlaganje
-                </button>
+              <div className="flex flex-wrap gap-3">
+                {["izpeljava", "zlaganje", "sestavljanje"].map((tip) => (
+                  <label
+                    key={tip}
+                    className="flex items-center gap-2 cursor-pointer"
+                  >
+                    <input
+                      type="radio"
+                      name="postopek"
+                      checked={postopek === tip}
+                      onChange={() => setPostopek(tip)}
+                      className="w-4 h-4 text-rose-900 focus:ring-rose-900"
+                    />
+                    <span className="text-neutral-800 capitalize">{tip}</span>
+                  </label>
+                ))}
               </div>
             </div>
           )}
@@ -280,75 +286,95 @@ function EditResultModal({ isOpen, onClose, result, onSave }) {
             </div>
           </div>
 
-          {/* Izpeljava fields */}
-          {tvorjenka && postopek === "izpeljava" && (
+          {/* Morfemi - only if tvorjenka */}
+          {tvorjenka && (
             <div className="border-t-2 border-rose-100 pt-4">
-              <h3 className="text-sm font-bold text-rose-900 mb-3 uppercase tracking-wide">
-                Izpeljava
-              </h3>
-
-              <div className="space-y-3">
-                <div>
-                  <label className="block text-xs font-semibold text-neutral-600 mb-1">
-                    Osnova
-                  </label>
-                  <input
-                    type="text"
-                    value={osnova}
-                    onChange={(e) => setOsnova(e.target.value)}
-                    placeholder="npr. postav"
-                    className="w-full px-3 py-2 text-sm border-2 border-rose-200 rounded-xl focus:ring-2 focus:ring-rose-900/20 focus:border-rose-900 outline-none bg-white/80"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-neutral-600 mb-1">
-                    Predpone (ločene z vejico)
-                  </label>
-                  <input
-                    type="text"
-                    value={predpone}
-                    onChange={(e) => setPredpone(e.target.value)}
-                    placeholder="npr. pred, po"
-                    className="w-full px-3 py-2 text-sm border-2 border-rose-200 rounded-xl focus:ring-2 focus:ring-rose-900/20 focus:border-rose-900 outline-none bg-white/80"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-neutral-600 mb-1">
-                    Pripone (ločene z vejico)
-                  </label>
-                  <input
-                    type="text"
-                    value={pripone}
-                    onChange={(e) => setPripone(e.target.value)}
-                    placeholder="npr. ka, ič"
-                    className="w-full px-3 py-2 text-sm border-2 border-rose-200 rounded-xl focus:ring-2 focus:ring-rose-900/20 focus:border-rose-900 outline-none bg-white/80"
-                  />
-                </div>
+              <div className="flex justify-between items-center mb-3">
+                <h3 className="text-sm font-bold text-rose-900 uppercase tracking-wide">
+                  Morfemi
+                </h3>
+                <button
+                  type="button"
+                  onClick={addMorfem}
+                  className="flex items-center gap-1 px-3 py-1.5 bg-rose-100 hover:bg-rose-200 text-rose-900 font-semibold rounded-xl transition-colors text-xs"
+                >
+                  <Plus className="w-4 h-4" />
+                  Dodaj morfem
+                </button>
               </div>
-            </div>
-          )}
 
-          {/* Zlaganje fields */}
-          {tvorjenka && postopek === "zlaganje" && (
-            <div className="border-t-2 border-rose-100 pt-4">
-              <h3 className="text-sm font-bold text-rose-900 mb-3 uppercase tracking-wide">
-                Zlaganje
-              </h3>
+              {morfemi.length === 0 ? (
+                <p className="text-sm text-neutral-500 italic">
+                  Dodajte morfeme (osnove, predpone, pripone, medpone)
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  {morfemi.map((morfem, index) => (
+                    <div
+                      key={index}
+                      draggable
+                      onDragStart={() => handleDragStart(index)}
+                      onDragOver={(e) => handleDragOver(e, index)}
+                      onDragEnd={handleDragEnd}
+                      className={`flex gap-2 items-center bg-white/80 p-3 rounded-xl border-2 transition-all cursor-move ${
+                        draggedIndex === index
+                          ? "border-rose-400 opacity-50"
+                          : "border-rose-100 hover:border-rose-300"
+                      }`}
+                    >
+                      {/* Position number on the left */}
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        <GripVertical className="w-5 h-5 text-neutral-400" />
+                        <div className="w-8 h-8 flex items-center justify-center bg-rose-100 text-rose-900 font-bold rounded-lg text-sm">
+                          {index + 1}
+                        </div>
+                      </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-neutral-600 mb-1">
-                  Osnove (ločene z vejico)
-                </label>
-                <input
-                  type="text"
-                  value={osnove}
-                  onChange={(e) => setOsnove(e.target.value)}
-                  placeholder="npr. avto, cesta"
-                  className="w-full px-3 py-2 text-sm border-2 border-rose-200 rounded-xl focus:ring-2 focus:ring-rose-900/20 focus:border-rose-900 outline-none bg-white/80"
-                />
-              </div>
+                      <div className="flex-1 grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="block text-xs font-semibold text-neutral-600 mb-1">
+                            Tip
+                          </label>
+                          <select
+                            value={morfem.tip}
+                            onChange={(e) =>
+                              updateMorfem(index, "tip", e.target.value)
+                            }
+                            className="w-full px-2 py-1.5 text-sm border-2 border-rose-200 rounded-lg focus:ring-2 focus:ring-rose-900/20 focus:border-rose-900 outline-none"
+                          >
+                            <option value="osnova">osnova</option>
+                            <option value="predpona">predpona</option>
+                            <option value="pripona">pripona</option>
+                            <option value="medpona">medpona</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-neutral-600 mb-1">
+                            Vrednost
+                          </label>
+                          <input
+                            type="text"
+                            value={morfem.vrednost}
+                            onChange={(e) =>
+                              updateMorfem(index, "vrednost", e.target.value)
+                            }
+                            placeholder="npr. postav"
+                            className="w-full px-2 py-1.5 text-sm border-2 border-rose-200 rounded-lg focus:ring-2 focus:ring-rose-900/20 focus:border-rose-900 outline-none"
+                          />
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => removeMorfem(index)}
+                        className="mt-6 p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors flex-shrink-0"
+                        title="Odstrani morfem"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 

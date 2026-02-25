@@ -1,5 +1,24 @@
 const mongoose = require("mongoose");
 
+const morphemeSchema = new mongoose.Schema(
+  {
+    tip: {
+      type: String,
+      enum: ["osnova", "predpona", "pripona", "medpona"],
+      required: true,
+    },
+    vrednost: {
+      type: String,
+      required: true,
+    },
+    pozicija: {
+      type: Number,
+      required: true,
+    },
+  },
+  { _id: false },
+);
+
 const wordSchema = new mongoose.Schema({
   beseda: {
     type: String,
@@ -15,8 +34,8 @@ const wordSchema = new mongoose.Schema({
   },
 
   postopek: {
-    type: String,
-    enum: ["izpeljava", "zlaganje", "netvorjenka"],
+    type: [String],
+    enum: ["izpeljava", "zlaganje", "sestavljanje", "netvorjenka"],
     required: true,
   },
 
@@ -32,13 +51,11 @@ const wordSchema = new mongoose.Schema({
     koncnica: { type: String },
   },
 
-  /* IZPELJAVA */
-  osnova: { type: String },
-  predpone: { type: [String], default: [] },
-  pripone: { type: [String], default: [] },
-
-  /* ZLAGANJE */
-  osnove: { type: [String], default: [] },
+  /* UNIVERZALNA MORFEMSKA STRUKTURA */
+  morfemi: {
+    type: [morphemeSchema],
+    default: [],
+  },
 
   confidence: { type: Number, min: 0, max: 1 },
 });

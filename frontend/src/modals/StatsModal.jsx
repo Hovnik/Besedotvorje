@@ -217,11 +217,13 @@ function StatsModal({ isOpen, onClose }) {
                                 {word.slovnicno.spol}
                               </span>
                             )}
-                            {word.postopek !== "netvorjenka" && (
-                              <span className="px-2 py-1 bg-green-100 text-green-900 rounded-lg">
-                                {word.postopek}
-                              </span>
-                            )}
+                            {word.postopek &&
+                              Array.isArray(word.postopek) &&
+                              !word.postopek.includes("netvorjenka") && (
+                                <span className="px-2 py-1 bg-green-100 text-green-900 rounded-lg">
+                                  {word.postopek.join(", ")}
+                                </span>
+                              )}
                           </div>
                         )}
                       </div>

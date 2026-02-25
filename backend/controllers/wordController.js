@@ -28,22 +28,26 @@ RULES:
 - Output ONLY valid JSON
 - No explanations
 - No extra fields
-- Use only these postopek values: "izpeljava", "zlaganje", "netvorjenka"
+- Use only these postopek values: "izpeljava", "zlaganje", "sestavljanje", "netvorjenka"
+- morfemi must be ordered by pozicija
 
 SCHEMA:
 {
   "beseda": string,
   "tvorjenka": boolean,
-  "postopek": "izpeljava" | "zlaganje" | "netvorjenka",
+  "postopek": ["izpeljava" | "zlaganje" | "sestavljanje" | "netvorjenka"],
   "slovnicno": {
     "besedna_vrsta"?: "samostalnik" | "pridevnik" | "glagol" | "prislov",
     "spol"?: "moški" | "ženski" | "srednji",
     "koncnica"?: string
   },
-  "osnova"?: string,
-  "predpone"?: string[],
-  "pripone"?: string[],
-  "osnove"?: string[],
+  "morfemi": [
+    {
+      "tip": "osnova" | "predpona" | "pripona" | "medpona",
+      "vrednost": string,
+      "pozicija": number
+    }
+  ],
   "confidence": number
 }
 
@@ -96,22 +100,45 @@ function validateAIOutput(data) {
     throw new Error("Invalid AI output: tvorjenka must be a boolean");
   }
 
-  if (!["izpeljava", "zlaganje", "netvorjenka"].includes(data.postopek)) {
-    throw new Error(
-      "Invalid AI output: postopek must be izpeljava, zlaganje, or netvorjenka",
-    );
+  // Validate postopek (now an array)
+  if (!Array.isArray(data.postopek) || data.postopek.length === 0) {
+    throw new Error("Invalid AI output: postopek must be a non-empty array");
   }
 
-  // Validation based on postopek
-  if (data.postopek === "izpeljava" && !data.osnova) {
-    throw new Error("Invalid AI output: izpeljava requires osnova");
+  const validPostopki = [
+    "izpeljava",
+    "zlaganje",
+    "sestavljanje",
+    "netvorjenka",
+  ];
+  for (const p of data.postopek) {
+    if (!validPostopki.includes(p)) {
+      throw new Error(
+        `Invalid AI output: postopek contains invalid value "${p}"`,
+      );
+    }
   }
 
-  if (
-    data.postopek === "zlaganje" &&
-    (!data.osnove || data.osnove.length < 2)
-  ) {
-    throw new Error("Invalid AI output: zlaganje requires at least 2 osnove");
+  // Validate morfemi structure
+  if (!Array.isArray(data.morfemi)) {
+    throw new Error("Invalid AI output: morfemi must be an array");
+  }
+
+  const validMorfemTypes = ["osnova", "predpona", "pripona", "medpona"];
+  for (const morfem of data.morfemi) {
+    if (!validMorfemTypes.includes(morfem.tip)) {
+      throw new Error(
+        `Invalid AI output: morfem tip "${morfem.tip}" is not valid`,
+      );
+    }
+    if (typeof morfem.vrednost !== "string" || !morfem.vrednost) {
+      throw new Error(
+        "Invalid AI output: morfem vrednost must be a non-empty string",
+      );
+    }
+    if (typeof morfem.pozicija !== "number") {
+      throw new Error("Invalid AI output: morfem pozicija must be a number");
+    }
   }
 
   // Confidence must be between 0 and 1
@@ -138,10 +165,7 @@ async function saveWordToDatabase(aiData) {
     tvorjenka: aiData.tvorjenka,
     postopek: aiData.postopek,
     slovnicno: aiData.slovnicno || {},
-    osnova: aiData.osnova || undefined,
-    predpone: aiData.predpone || [],
-    pripone: aiData.pripone || [],
-    osnove: aiData.osnove || [],
+    morfemi: aiData.morfemi || [],
     confidence: aiData.confidence,
   });
 
@@ -252,15 +276,24 @@ exports.updateWord = async (req, res) => {
 
       // If not tvorjenka, set postopek to netvorjenka
       if (!updateData.tvorjenka) {
-        word.postopek = "netvorjenka";
+        word.postopek = ["netvorjenka"];
       }
     }
 
-    if (
-      updateData.postopek &&
-      ["izpeljava", "zlaganje", "netvorjenka"].includes(updateData.postopek)
-    ) {
-      word.postopek = updateData.postopek;
+    // Update postopek (now an array)
+    if (Array.isArray(updateData.postopek)) {
+      const validPostopki = [
+        "izpeljava",
+        "zlaganje",
+        "sestavljanje",
+        "netvorjenka",
+      ];
+      const validatedPostopek = updateData.postopek.filter((p) =>
+        validPostopki.includes(p),
+      );
+      if (validatedPostopek.length > 0) {
+        word.postopek = validatedPostopek;
+      }
     }
 
     // Update slovnicno
@@ -281,49 +314,20 @@ exports.updateWord = async (req, res) => {
       word.markModified("slovnicno");
     }
 
-    // Update izpeljava fields
-    if (word.postopek === "izpeljava") {
-      // Clear zlaganje fields
-      word.osnove = [];
-      word.markModified("osnove");
-
-      // Update izpeljava fields
-      if (updateData.osnova !== undefined) {
-        word.osnova = updateData.osnova;
-      }
-      if (Array.isArray(updateData.predpone)) {
-        word.predpone = [...updateData.predpone];
-        word.markModified("predpone");
-      }
-      if (Array.isArray(updateData.pripone)) {
-        word.pripone = [...updateData.pripone];
-        word.markModified("pripone");
-      }
+    // Update morfemi (universal structure for all word formation types)
+    if (Array.isArray(updateData.morfemi)) {
+      word.morfemi = updateData.morfemi.map((m) => ({
+        tip: m.tip,
+        vrednost: m.vrednost,
+        pozicija: m.pozicija,
+      }));
+      word.markModified("morfemi");
     }
-    // Update zlaganje fields
-    else if (word.postopek === "zlaganje") {
-      // Clear izpeljava fields
-      word.osnova = undefined;
-      word.predpone = [];
-      word.pripone = [];
-      word.markModified("predpone");
-      word.markModified("pripone");
 
-      // Update osnove
-      if (Array.isArray(updateData.osnove)) {
-        word.osnove = [...updateData.osnove];
-        word.markModified("osnove");
-      }
-    }
-    // Clear all derivative fields for netvorjenka
-    else if (word.postopek === "netvorjenka") {
-      word.osnova = undefined;
-      word.predpone = [];
-      word.pripone = [];
-      word.osnove = [];
-      word.markModified("predpone");
-      word.markModified("pripone");
-      word.markModified("osnove");
+    // Clear morfemi for netvorjenka
+    if (word.postopek.includes("netvorjenka") && word.postopek.length === 1) {
+      word.morfemi = [];
+      word.markModified("morfemi");
     }
 
     // Save updated word

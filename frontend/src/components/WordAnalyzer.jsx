@@ -208,7 +208,9 @@ function WordAnalyzer({ onResultChange }) {
           )}
 
           {/* Check if it's not a derivative word */}
-          {!result.tvorjenka || result.postopek === "netvorjenka" ? (
+          {!result.tvorjenka ||
+          (Array.isArray(result.postopek) &&
+            result.postopek.includes("netvorjenka")) ? (
             <div className="space-y-6">
               <div className="bg-gradient-to-r from-amber-100 to-orange-100 border-2 border-amber-300 rounded-2xl p-4 sm:p-6 md:p-8 shadow-md">
                 <p className="text-lg sm:text-xl md:text-2xl font-bold text-neutral-800">
@@ -233,11 +235,13 @@ function WordAnalyzer({ onResultChange }) {
                   <p className="text-3xl sm:text-4xl font-black text-rose-900">
                     {result.beseda}
                   </p>
-                  {result.postopek && (
-                    <span className="px-3 py-1 bg-gradient-to-r from-amber-200 to-orange-200 text-rose-900 text-xs sm:text-sm font-semibold rounded-lg relative -top-2">
-                      {result.postopek}
-                    </span>
-                  )}
+                  {result.postopek &&
+                    Array.isArray(result.postopek) &&
+                    result.postopek.length > 0 && (
+                      <span className="px-3 py-1 bg-gradient-to-r from-amber-200 to-orange-200 text-rose-900 text-xs sm:text-sm font-semibold rounded-lg relative -top-2">
+                        {result.postopek.join(", ")}
+                      </span>
+                    )}
                 </div>
               </div>
 
