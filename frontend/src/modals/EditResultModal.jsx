@@ -5,7 +5,7 @@ import { useScrollLock } from "../hooks/useScrollLock";
 
 function EditResultModal({ isOpen, onClose, result, onSave }) {
   const [tvorjenka, setTvorjenka] = useState(true);
-  const [postopek, setPostopek] = useState("izpeljava");
+  const [postopek, setPostopek] = useState("izpeljanka");
 
   // Slovnicno fields
   const [besednaVrsta, setBesednaVrsta] = useState("");
@@ -27,8 +27,8 @@ function EditResultModal({ isOpen, onClose, result, onSave }) {
       // Convert array to single value
       setPostopek(
         Array.isArray(result.postopek)
-          ? result.postopek[0] || "izpeljava"
-          : result.postopek || "izpeljava",
+          ? result.postopek[0] || "izpeljanka"
+          : result.postopek || "izpeljanka",
       );
 
       setBesednaVrsta(result.slovnicno?.besedna_vrsta || "");
@@ -202,7 +202,15 @@ function EditResultModal({ isOpen, onClose, result, onSave }) {
                 Postopek
               </label>
               <div className="flex flex-wrap gap-3">
-                {["izpeljava", "zlaganje", "sestavljanje"].map((tip) => (
+                {[
+                  "izpeljanka",
+                  "zloženka",
+                  "sestavljenka",
+                  "tvorjenka iz predložne zveze",
+                  "sklop",
+                  "krn",
+                  "mešana tvorba",
+                ].map((tip) => (
                   <label
                     key={tip}
                     className="flex items-center gap-2 cursor-pointer"

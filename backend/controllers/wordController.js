@@ -28,14 +28,14 @@ RULES:
 - Output ONLY valid JSON
 - No explanations
 - No extra fields
-- Use only these postopek values: "izpeljava", "zlaganje", "sestavljanje", "netvorjenka"
+- Use only these postopek values: "izpeljanka", "zloženka", "sestavljenka", "tvorjenka iz predložne zveze", "sklop", "krn", "mešana tvorba", "netvorjenka"
 - morfemi must be ordered by pozicija
 
 SCHEMA:
 {
   "beseda": string,
   "tvorjenka": boolean,
-  "postopek": ["izpeljava" | "zlaganje" | "sestavljanje" | "netvorjenka"],
+  "postopek": ["izpeljanka" | "zloženka" | "sestavljenka" | "tvorjenka iz predložne zveze" | "sklop" | "krn" | "mešana tvorba" | "netvorjenka"],
   "slovnicno": {
     "besedna_vrsta"?: "samostalnik" | "pridevnik" | "glagol" | "prislov",
     "spol"?: "moški" | "ženski" | "srednji",
@@ -106,9 +106,13 @@ function validateAIOutput(data) {
   }
 
   const validPostopki = [
-    "izpeljava",
-    "zlaganje",
-    "sestavljanje",
+    "izpeljanka",
+    "zloženka",
+    "sestavljenka",
+    "tvorjenka iz predložne zveze",
+    "sklop",
+    "krn",
+    "mešana tvorba",
     "netvorjenka",
   ];
   for (const p of data.postopek) {
@@ -161,7 +165,7 @@ function validateAIOutput(data) {
 async function saveWordToDatabase(aiData) {
   // Create the Word document
   const word = new Word({
-    beseda: aiData.beseda.toLowerCase().trim(),
+    beseda: aiData.beseda.trim(),
     tvorjenka: aiData.tvorjenka,
     postopek: aiData.postopek,
     slovnicno: aiData.slovnicno || {},
@@ -195,7 +199,7 @@ exports.analyzeWord = async (req, res) => {
       });
     }
 
-    const wordToAnalyze = beseda.toLowerCase().trim();
+    const wordToAnalyze = beseda.trim();
 
     // Check if word already exists in database
     let existingWord = await Word.findOne({ beseda: wordToAnalyze });
@@ -283,9 +287,13 @@ exports.updateWord = async (req, res) => {
     // Update postopek (now an array)
     if (Array.isArray(updateData.postopek)) {
       const validPostopki = [
-        "izpeljava",
-        "zlaganje",
-        "sestavljanje",
+        "izpeljanka",
+        "zloženka",
+        "sestavljenka",
+        "tvorjenka iz predložne zveze",
+        "sklop",
+        "krn",
+        "mešana tvorba",
         "netvorjenka",
       ];
       const validatedPostopek = updateData.postopek.filter((p) =>

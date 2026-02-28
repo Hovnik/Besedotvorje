@@ -24,7 +24,6 @@ const wordSchema = new mongoose.Schema({
     type: String,
     required: true,
     unique: true,
-    lowercase: true,
     trim: true,
   },
 
@@ -35,7 +34,16 @@ const wordSchema = new mongoose.Schema({
 
   postopek: {
     type: [String],
-    enum: ["izpeljava", "zlaganje", "sestavljanje", "netvorjenka"],
+    enum: [
+      "izpeljanka",
+      "zloženka",
+      "sestavljenka",
+      "tvorjenka iz predložne zveze",
+      "sklop",
+      "krn",
+      "mešana tvorba",
+      "netvorjenka",
+    ],
     required: true,
   },
 
